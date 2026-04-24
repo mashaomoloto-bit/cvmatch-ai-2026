@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVMatch AI Pro 2026</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v5/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+    <style>
+        :root { --primary: #3b82f6; --bg: #0f172a; --card: #1e2937; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: #e2e8f0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: var(--card); border-radius: 15px; padding: 25px; margin-bottom: 20px; box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
+        input, textarea { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; margin-top: 10px; }
+        button { width: 100%; padding: 15px; background: var(--primary); color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .resume-preview { background: white; color: #1e2937; padding: 30px; border-radius: 8px; margin-top: 20px; min-height: 200px; line-height: 1.6; }
+        #statusOutput { font-size: 0.9rem; color: #94a3b8; margin-top: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1 style="text-align:center; margin-bottom:20px;">CVMatch AI Pro 2026</h1>
+    
+    <div class="card">
+        <label>Target Role</label>
+        <input type="text" id="targetRole" placeholder="e.g. Merchandiser">
+        
+        <label style="display:block; margin-top:20px;">Job Description</label>
+        <textarea id="jobDesc" rows="4" placeholder="Paste the job requirements here..."></textarea>
+    </div>
+
+    <div class="card" id="uploadCard">
+        <p style="text-align:center;">Click to upload your Resume PDF</p>
+        <input type="file" id="fileInput" accept="application/pdf">
+        <div id="statusOutput">Waiting for file...</div>
+    </div>
+
+    <button id="generateBtn" onclick="buildOptimizedResume()">🚀 Generate Tailored Resume</button>
+
+    <div id="resumeSection" class="card" style="display:none;">
+        <h2>Your New Resume</h2>
+        <div id="resumePreview" class="resume-preview"></div>
+        <button onclick="exportPDF()" style="background:#16a34a; margin-top:20px;">Download PDF</button>
+    </div>
+</div>
+
+<script>
+    let resumeText = "";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    const fileInput = document.getElementById('fileInput');
+    const status = document.getElementById('statusOutput');
+
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        status.innerText = "Reading PDF...";
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                fullText += content.items.map(s => s.str).join(" ") + " ";
+            }
+            resumeText = fullText.trim();
+            status.innerText = "✅ Resume loaded successfully!";
+        } catch (err) {
+            status.innerText = "❌ Error reading PDF. Try another file.";
+        }
+    };
+
+    async function buildOptimizedResume() {
+        const role = document.getElementById('targetRole').value;
+        const desc = document.getElementById('jobDesc').value;
+        const preview = document.getElementById('resumePreview');
+
+        if (!resumeText || !role || !desc) {
+            alert("Please provide Role, Job Description, and Resume PDF.");
+            return;
+        }
+
+        document.getElementById('resumeSection').style.display = "block";
+        preview.innerHTML = "<i>AI is thinking... this takes about 10 seconds...</i>";
+        document.getElementById('generateBtn').disabled = true;
+
+        try {
+            const response = await fetch("/api/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    prompt: `Create a professional resume for a ${role} position. Use this original resume data: ${resumeText}. Tailor it to this job description: ${desc}. Return ONLY clean HTML (h2, ul, li tags). No markdown.`
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.candidates && data.candidates[0].content.parts[0].text) {
+                preview.innerHTML = data.candidates[0].content.parts[0].text.replace(/```html|```/g, "");
+            } else {
+                throw new Error("Invalid response from AI");
+            }
+        } catch (err) {
+            preview.innerHTML = `<b style="color:red;">Error:</b> ${err.message}. Check Vercel logs for GEMINI_API_KEY errors.`;
+        } finally {
+            document.getElementById('generateBtn').disabled = false;
+        }
+    }
+
+    function exportPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'pt', 'a4');
+        doc.html(document.getElementById('resumePreview'), {
+            callback: function (doc) { doc.save('Tailored_Resume.pdf'); },
+            margin: [40, 40, 40, 40],
+            autoPaging: 'text',
+            x: 0, y: 0,
+            width: 520,
+            windowWidth: 650
+        });
+    }
+</script>
+</body>
+</html>
