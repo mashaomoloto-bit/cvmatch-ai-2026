@@ -1,0 +1,102 @@
+<script>
+    // API_KEY is now removed from frontend for security. 
+    // It will be handled by /api/generate.js on Vercel.
+    
+    let resumeText = "";
+    let currentTargetRole = "";
+    let currentOptimizedResume = "";
+
+    // PDF.js setup
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // File upload logic
+    document.getElementById('dropZone').onclick = () => document.getElementById('fileInput').click();
+    document.getElementById('fileInput').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        document.getElementById('fileName').style.display = 'block';
+        document.getElementById('fileName').innerText = `✅ ${file.name}`;
+        resumeText = await extractTextWithOCR(file);
+    };
+
+    async function extractTextWithOCR(file) {
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let text = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map(item => item.str).join(" ") + "\n";
+            }
+            if (text.trim().length > 200) return text.trim();
+        } catch (e) { console.error("PDF text extraction failed, trying OCR..."); }
+        
+        const { data } = await Tesseract.recognize(file, 'eng');
+        return data.text.trim();
+    }
+
+    function quickFillRole(role) {
+        document.getElementById('targetRole').value = role;
+    }
+
+    async function analyzeCV() {
+        currentTargetRole = document.getElementById('targetRole').value.trim();
+        const jobDesc = document.getElementById('jobDesc').value.trim();
+
+        if (!resumeText) return alert("Please upload your resume PDF");
+        if (!jobDesc) return alert("Please paste the job description");
+        if (!currentTargetRole) return alert("Please enter your target role");
+
+        document.getElementById('loadingScreen').style.display = 'block';
+        document.getElementById('loadingText').innerText = `Analyzing for ${currentTargetRole}...`;
+
+        setTimeout(() => {
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+        }, 1500);
+    }
+
+    async function buildOptimizedResume() {
+        const jobDesc = document.getElementById('jobDesc').value.trim();
+        document.getElementById('resumeBuilder').style.display = 'block';
+        document.getElementById('resumeBuilder').scrollIntoView({ behavior: 'smooth' });
+        document.getElementById('roleDisplay').textContent = currentTargetRole;
+        document.getElementById('resumePreview').innerHTML = "Generating your optimized resume...";
+
+        const prompt = `You are an elite resume writer in 2026. Create a powerful, ATS-optimized, single-column resume tailored exactly for this role:
+        Target Role: ${currentTargetRole}
+        Job Description: ${jobDesc}
+        Original Candidate Background: ${resumeText}
+        Requirements: Use strong action verbs, quantify achievements, and return only well-structured HTML (headings, bullets).`;
+
+        try {
+            // UPDATED FETCH CALL: Calling your Vercel Serverless Function
+            const response = await fetch("/api/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: prompt })
+            });
+
+            const data = await response.json();
+            
+            // Extract the text from the Gemini response structure
+            if (data.candidates && data.candidates[0].content.parts[0].text) {
+                let htmlContent = data.candidates[0].content.parts[0].text.trim();
+                // Clean up markdown code blocks if the AI includes them
+                htmlContent = htmlContent.replace(/^```html/, "").replace(/```$/, "");
+                
+                currentOptimizedResume = htmlContent;
+                document.getElementById('resumePreview').innerHTML = htmlContent;
+            } else {
+                throw new Error("Invalid API response");
+            }
+        } catch (error) {
+            console.error(error);
+            document.getElementById('resumePreview').innerHTML = "<p style='color:red;'>Error: Could not connect to AI. Did you add the GEMINI_API_KEY to Vercel?</p>";
+        }
+    }
+
+    // ... (Keep exportResumePDF, regenerateResume, and other functions same as before)
+</script>
